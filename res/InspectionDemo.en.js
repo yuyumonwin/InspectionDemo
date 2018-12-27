@@ -1,0 +1,6 @@
+﻿// AUTO GENERATED FILE : DO NOT MODIFY
+R.DESCRIPTION="Description";
+R.YES="Yes";
+R.NO="No";
+R.TEAM="Team";
+R.EDIT="Edit";

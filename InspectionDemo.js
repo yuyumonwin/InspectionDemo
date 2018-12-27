@@ -1,5 +1,5 @@
 Config.appid = "mockup_inspection";
-Config.version = "91";
+Config.version = "99";
 Config.title = "Inspection Demo";
 Config.uses = "NovadeTrack;";
 Config.beta = "1";
@@ -25,6 +25,8 @@ var CHK_FORMID = "chk_formid";
 
 function main() {
 
+    var version = Config.version;
+    App.alert("Come here " + version);
     List.addItem("Inspection Types", "viewInspectionTypes()", "img:activities;icon:arrow");
     var data = getInspectionData();
 
@@ -68,7 +70,8 @@ function main() {
 
 function getInspectionData () {
     var userName = User.getName();
-    var inspections = Query.select("inspection", "*", "owner CONTAINS {userName}", "date");
+    // var inspections = Query.select("inspection", "*", "owner CONTAINS {userName}", "date");
+    var inspections = Query.select("inspection");
 
     // App.alert("Come here 2 : " + inspections.length);
 
@@ -233,39 +236,6 @@ function viewInspections (typeid) {
     List.show();
 }
 
-// function selectBlock (projectid) {
-//     var units = Query.selectDistinct("novadetrack.units", "block", "projectid={projectid}");
-
-//     if (units.length == 1) {
-//         History.redirect("selectLevel({projectid})");
-//     } else {
-//         for (i = 0; i < units.length; i++) {
-//             var unit = units[i];
-//             var label = unit.block? "Block" + " " + unit.block : "Block" + " -";
-//             List.addItem(label, "selectLevel({projectid}, {unit.block})");
-//         }
-//         List.show();
-//     }
-// }
-
-// function selectLevel (projectid, block) {
-//     var histToRemove = 1;
-//     histToRemove = histToRemove + 1;
-//     var level, units = Query.selectDistinct("novadetrack.units", "level", "projectid={projectid} AND block={block}");
-//     if (units.length == 1) {
-//         level = units[0].level;
-//         History.redirect("selectUnit({projectid})");
-//     } else {
-//         List.addItemTitle("Select Level");
-//         for (var i = 0; i < units.length; i++) {
-//             var unit = units[i];
-//             level = unit.level? "Level" + " " + unit.level : "Level" + " -";
-//             List.addItem(level, "selectUnit({projectid}, {block}, {unit.level}, {histToRemove})");
-//         }
-//         List.show();
-//     }
-// }
-
 function selectUnit (projectid, block, level, histToRemove) { // Remove history
     if (!histToRemove) histToRemove = 0;
     histToRemove = histToRemove + 1;
@@ -410,6 +380,7 @@ function takePix(id) {
 }
 
 function newInspection (typeid, unitid, histToRemove) {
+    History.remove(parseInt(histToRemove));
     var type = Query.selectId("inspectiontype", typeid);
 
     var count = Query.count("inspection", "typeid={typeid}") + 1;
@@ -423,14 +394,56 @@ function newInspection (typeid, unitid, histToRemove) {
         lodgedby: User.getName(),
         owner: User.getName()
     }
-    var id = Query.insert("inspection", inspection);
-    if (type.templateid) {
-        var formid = newFormInternal(type.templateid, "inspection", inspection.id);
-        Query.updateId("inspection", id, "formid", formid);
+    var id = Query.insert("inspection", {});
+
+    var name = type.name + " " + count;
+    Query.updateId("inspection", id, "name", name);
+    Query.updateId("inspection", id, "typeid", typeid);
+    Query.updateId("inspection", id, "date", Date.now());
+    Query.updateId("inspection", id, "description", type.description);
+    Query.updateId("inspection", id, "status", NEW);
+    Query.updateId("inspection", id, "unitids", unitid);
+    Query.updateId("inspection", id, "lodgedby", User.getName());
+    Query.updateId("inspection", id, "owner", User.getName());
+
+    // if (type.templateid) {
+    //     var formid = newFormInternal(type.templateid, "inspection", inspection.id);
+    //     Query.updateId("inspection", id, "formid", formid);
+    // }
+
+
+    History.add("viewInspection({id})");
+    History.redirect("editInspection({id})");
+}
+
+function editInspection (id) {
+    Toolbar.addButton("DELETE", "deleteInspection({id})", "delete");
+    List.addItemTitle("Edit Inspection");
+
+    var inspection = Query.selectId("inspection", id);
+
+    var onchange = "Query.updateId('inspection',{id}, this.id, this.value);History.reload()";
+
+    List.addTextBox("name", "Name", inspection.name, onchange);
+    List.addTextBox("description", "Description", inspection.description, onchange);
+    List.addTextBox("scheduledate", "Schedule Date", inspection.scheduledate, onchange, "date")
+
+    var allAssignees = Query.select("novaderesources.people");
+    allAssignees = allAssignees.filter(function(as) { return MultiValue.contains(as.projectids, "32"); });
+
+    var options = allAssignees.map(function(as) {
+        return as.username;
+    });
+
+    List.addComboBox("assignee", "Assignee", inspection.assignee, "onChangeAssignee({id}, this.value)", options.join("|"));
+    if (inspection.formid) {
+        var form = Query.selectId("Forms.forms", inspection.formid);
+        writeEditFields(form);
     }
 
-    History.remove(parseInt(histToRemove));
-    History.redirect("editInspection({id})");
+    var cb = "viewInspection({id})";
+    List.addButton("Save", "History.back()");
+    List.show();
 }
 
 function confirmInspection (id) {
@@ -547,36 +560,6 @@ function rejectInspection (id) {
     History.remove();
     History.add("viewInspections({inspection.typeid})");
     History.redirect("viewInspection({newInspectionId})");
-}
-
-function editInspection (id) {
-    Toolbar.addButton("DELETE", "deleteInspection({id})", "delete");
-    List.addItemTitle("Edit Inspection");
-
-    var inspection = Query.selectId("inspection", id);
-
-    var onchange = "Query.updateId('inspection',{id}, this.id, this.value);History.reload()";
-
-    List.addTextBox("name", "Name", inspection.name, onchange);
-    List.addTextBox("description", "Description", inspection.description, onchange);
-    List.addTextBox("scheduledate", "Schedule Date", inspection.scheduledate, onchange, "date")
-
-    var allAssignees = Query.select("novaderesources.people");
-    allAssignees = allAssignees.filter(function(as) { return MultiValue.contains(as.projectids, "32"); });
-
-    var options = allAssignees.map(function(as) {
-        return as.username;
-    });
-
-    List.addComboBox("assignee", "Assignee", inspection.assignee, "onChangeAssignee({id}, this.value)", options.join("|"));
-    if (inspection.formid) {
-        var form = Query.selectId("Forms.forms", inspection.formid);
-        writeEditFields(form);
-    }
-
-    var cb = "viewInspection({id})";
-    List.addButton("Save", "History.remove();History.redirect({cb})");
-    List.show();
 }
 
 function onChangeAssignee (id, value) {
