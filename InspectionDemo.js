@@ -1,5 +1,5 @@
 Config.appid = "mockup_inspection";
-Config.version = "99";
+Config.version = "103";
 Config.title = "Inspection Demo";
 Config.uses = "NovadeTrack;";
 Config.beta = "1";
@@ -9,8 +9,9 @@ Config.include = [
 ];
 
 Config.tables["comments"] = "id;owner;projectid;defectid;caseid;inspectionid;comment;date DATE;type INTEGER;deletedby";
+
 Config.tables["inspectiontype"] = "id;name;description;templateid";
-Config.tables["inspection"] = "id;name;unitids;typeid;description;owner;lodgedby;assignee;inspectionstatus INTEGER;status INTEGER;parentid;startdate DATE;scheduledate DATE;date DATE;confirmationdate DATE;approvaldate DATE;rejecteddate DATE;fileids;formid;commentids";
+Config.tables["inspections"] = "id;name;unitids;typeid;description;owner;lodgedby;assignee;inspectionstatus INTEGER;status INTEGER;parentid;startdate DATE;scheduledate DATE;date DATE;confirmationdate DATE;approvaldate DATE;rejecteddate DATE;fileids;formid;commentids";
 
 var NEW = 1;
 var WIP = 2;
@@ -37,11 +38,11 @@ function main() {
         Toolbar.addButton("Add New Inspection", "selectUnit('32', '', '')", "new");
 
         var userName = User.getName();
-        var inspections = Query.select("inspection", "*", "owner CONTAINS {userName}");
+        var inspections = Query.select("inspections", "*", "owner CONTAINS {userName}");
 
         if (userName == "yuyumonwin") { // This is Admin. Should be Maincon/subcon account to test
 
-            var insp = Query.select("inspection", "*", "owner CONTAINS {User.getName()}", "date");
+            var insp = Query.select("inspections", "*", "owner CONTAINS {User.getName()}", "date");
             List.addItem("All", "viewMobileInspections('all')", "img:job;count:" + data.all);
             List.addItem("Draft", "viewMobileInspections('new')", "img:edit;count:" + data.new);
             List.addItem("Work In Progress", "viewMobileInspections('wip')", "img:job;count:" + data.wip);
@@ -68,10 +69,14 @@ function main() {
     List.show();
 }
 
+function leftpane () {
+    List.show();
+}
+
 function getInspectionData () {
     var userName = User.getName();
-    // var inspections = Query.select("inspection", "*", "owner CONTAINS {userName}", "date");
-    var inspections = Query.select("inspection");
+    // var inspections = Query.select("inspections", "*", "owner CONTAINS {userName}", "date");
+    var inspections = Query.select("inspections");
 
     // App.alert("Come here 2 : " + inspections.length);
 
@@ -191,7 +196,6 @@ function viewMobileInspections (status) {
         List.addItem(inspection.name, "viewInspection({inspection.id})", "img:inspection");
     });
     List.show();
-
 }
 
 function viewInspectionTypes () {
@@ -208,10 +212,10 @@ function viewInspectionGroups () {
     Toolbar.addButton("Add New Inspection", "selectUnit('32', '', '')", "new");
     List.addItemTitle("Inspections By Types")
 
-    var inspections = Query.selectDistinct("inspection", "typeid");
+    var inspections = Query.selectDistinct("inspections", "typeid");
     inspections.forEach(function (inspection) {
         var type = Query.selectId("inspectiontype", inspection.typeid);
-        var count = Query.count("inspection", "typeid={inspection.typeid}");
+        var count = Query.count("inspections", "typeid={inspection.typeid}");
         List.addItemSubtitle(type.name, "Total Inspections - " + count, "viewInspections({type.id})", "img:activities");
     });
     List.show();
@@ -223,12 +227,12 @@ function viewInspections (typeid) {
         var type = Query.selectId("inspectiontype", typeid);
         List.addItemTitle("Inspections", "Type - " + type.name);
 
-        var inspections = Query.select("inspection", "*", "typeid={typeid}");
+        var inspections = Query.select("inspections", "*", "typeid={typeid}");
         inspections.forEach(function (inspection) {
             List.addItem(inspection.name, "viewInspection({inspection.id})", "img:inspection");
         });
     } else {
-        var inspections = Query.select("inspection", "*", "owner CONTAINS {User.getName()}", "date");
+        var inspections = Query.select("inspections", "*", "owner CONTAINS {User.getName()}", "date");
         inspections.forEach(function (inspection) {
             List.addItem(inspection.name, "viewInspection({inspection.id})", "img:inspection");
         });
@@ -270,7 +274,7 @@ function viewInspection (id, tab) {
     Toolbar.addTab("Info", "viewInspection({id})");
     Toolbar.addTab("History", "viewInspection({id}, 'history')");
 
-    var inspection = Query.selectId("inspection", id);
+    var inspection = Query.selectId("inspections", id);
     var inspectionstatus = inspection.inspectionstatus;
     if (!tab) {
         Toolbar.addButton("Edit", "editInspection({id})", "edit");
@@ -285,7 +289,7 @@ function viewInspection (id, tab) {
         List.addItemTitle(inspection.name, displayStatus);
 
         if (userName != "yuyumonwin" && !inspectionstatus) {
-            List.addButton("Start", "Query.updateId('inspection', {id}, 'inspectionstatus', 1); History.reload();");
+            List.addButton("Start", "Query.updateId('inspections', {id}, 'inspectionstatus', 1); History.reload();");
         } else {
             if (status == NEW) List.addButton("Submit", "confirmInspection({id})");
             else if (status == WIP) {
@@ -324,7 +328,7 @@ function viewInspection (id, tab) {
 
     } else {
         if (inspection.parentid) {
-            var parentInspection = Query.selectId("inspection", inspection.parentid);
+            var parentInspection = Query.selectId("inspections", inspection.parentid);
             List.addItemSubtitle("Parent Inspection", parentInspection.name, "viewInspection({parentInspection.id})", "img:form;icon:arrow");
         }
         List.addHeader("");
@@ -359,8 +363,8 @@ function addComment (id) {
 }
 
 function writeInspectionPhotos (id) {
-    var inspection = Query.selectId("inspection", id);
-    var photos = Query.select("System.files", "id", "linkedtable='inspection' AND linkedrecid={id}");
+    var inspection = Query.selectId("inspections", id);
+    var photos = Query.select("System.files", "id", "linkedtable='inspections' AND linkedrecid={id}");
     if (photos.length) List.addHeader("Photos");
     for (var i = 0; i < photos.length; i++) {
         var file = photos[i];
@@ -376,41 +380,45 @@ function writeInspectionPhotos (id) {
 }
 
 function takePix(id) {
-    App.takePicture('inspection', id, null, "");
+    App.takePicture('inspections', id, null, "");
 }
 
 function newInspection (typeid, unitid, histToRemove) {
     History.remove(parseInt(histToRemove));
     var type = Query.selectId("inspectiontype", typeid);
 
-    var count = Query.count("inspection", "typeid={typeid}") + 1;
-    var inspection = {
-        name: type.name + " " + count,
-        typeid: typeid,
-        date: Date.now(),
-        description: type.description,
-        status: NEW,
-        unitids: unitid,
-        lodgedby: User.getName(),
-        owner: User.getName()
-    }
-    var id = Query.insert("inspection", {});
-
-    var name = type.name + " " + count;
-    Query.updateId("inspection", id, "name", name);
-    Query.updateId("inspection", id, "typeid", typeid);
-    Query.updateId("inspection", id, "date", Date.now());
-    Query.updateId("inspection", id, "description", type.description);
-    Query.updateId("inspection", id, "status", NEW);
-    Query.updateId("inspection", id, "unitids", unitid);
-    Query.updateId("inspection", id, "lodgedby", User.getName());
-    Query.updateId("inspection", id, "owner", User.getName());
-
-    // if (type.templateid) {
-    //     var formid = newFormInternal(type.templateid, "inspection", inspection.id);
-    //     Query.updateId("inspection", id, "formid", formid);
+    var count = Query.count("mockup_inspection.inspections", "typeid={typeid}") + 1;
+    // var inspection = {
+    //     name: type.name + " " + count,
+    //     typeid: typeid,
+    //     date: Date.now(),
+    //     description: type.description,
+    //     status: NEW,
+    //     unitids: unitid,
+    //     lodgedby: User.getName(),
+    //     owner: User.getName()
     // }
 
+    var inspection = {
+        name: type.name + " " + count,
+        typeid: typeid
+    }
+    var id = Query.insert("mockup_inspection.inspections", inspection);
+
+    // var name = type.name + " " + count;
+    // Query.updateId("inspections", id, "name", name);
+    // Query.updateId("inspections", id, "typeid", typeid);
+    // Query.updateId("inspections", id, "date", Date.now());
+    // Query.updateId("inspections", id, "description", type.description);
+    // Query.updateId("inspections", id, "status", NEW);
+    // Query.updateId("inspections", id, "unitids", unitid);
+    // Query.updateId("inspections", id, "lodgedby", User.getName());
+    // Query.updateId("inspections", id, "owner", User.getName());
+
+    // if (type.templateid) {
+    //     var formid = newFormInternal(type.templateid, "inspections", inspection.id);
+    //     Query.updateId("inspections", id, "formid", formid);
+    // }
 
     History.add("viewInspection({id})");
     History.redirect("editInspection({id})");
@@ -420,9 +428,9 @@ function editInspection (id) {
     Toolbar.addButton("DELETE", "deleteInspection({id})", "delete");
     List.addItemTitle("Edit Inspection");
 
-    var inspection = Query.selectId("inspection", id);
+    var inspection = Query.selectId("inspections", id);
 
-    var onchange = "Query.updateId('inspection',{id}, this.id, this.value);History.reload()";
+    var onchange = "Query.updateId('inspections',{id}, this.id, this.value);History.reload()";
 
     List.addTextBox("name", "Name", inspection.name, onchange);
     List.addTextBox("description", "Description", inspection.description, onchange);
@@ -447,27 +455,27 @@ function editInspection (id) {
 }
 
 function confirmInspection (id) {
-    var inspection = Query.selectId("inspection", id);
+    var inspection = Query.selectId("inspections", id);
     if (App.confirm("Are you sure you want to confirm this inspection?") === false) return false;
 
-    Query.updateId("inspection", id, "status", WIP);
-    Query.updateId("inspection", id, "confirmationdate", Date.now());
+    Query.updateId("inspections", id, "status", WIP);
+    Query.updateId("inspections", id, "confirmationdate", Date.now());
     History.remove();
     History.redirect("viewInspection({id})");
 }
 
 function approveInspection (id) {
-    var inspection = Query.selectId("inspection", id);
+    var inspection = Query.selectId("inspections", id);
     if (App.confirm("Are you sure you want to approve this inspection?") === false) return false;
 
-    Query.updateId("inspection", id, "status", APPROVED);
-    Query.updateId("inspection", id, "approvaldate", Date.now());
+    Query.updateId("inspections", id, "status", APPROVED);
+    Query.updateId("inspections", id, "approvaldate", Date.now());
     History.remove();
     History.redirect("viewInspection({id})");
 }
 
 function gotoCollectDataToDuplicateForReject (id) {
-    var inspection = Query.selectId("inspection", id);
+    var inspection = Query.selectId("inspections", id);
     if (App.confirm("Are you sure you want to reject this inspection?") === false) return false;
     History.remove();
     History.redirect("selectDataToDuplicate({id})");
@@ -475,8 +483,8 @@ function gotoCollectDataToDuplicateForReject (id) {
 
 
 function selectDataToDuplicate (id) {
-    var inspection = Query.selectId("inspection", id);
-    var files = Query.select("System.files", "id", "linkedtable='inspection' AND linkedrecid={id}");
+    var inspection = Query.selectId("inspections", id);
+    var files = Query.select("System.files", "id", "linkedtable='inspections' AND linkedrecid={id}");
 
     if (!inspection.formid && !files.length)
         History.redirect("rejectInspection({id})");
@@ -498,7 +506,7 @@ function selectDataToDuplicate (id) {
 }
 
 function rejectInspection (id) {
-    var inspection = Query.selectId("inspection", id);
+    var inspection = Query.selectId("inspections", id);
     var fileids = LocalSettings.get(CHK_FILEIDS, 0);
     var formid = LocalSettings.get(CHK_FORMID, 0);
 
@@ -518,7 +526,7 @@ function rejectInspection (id) {
     newInspection.scheduledate = inspection.scheduledate;
 
     var type = Query.selectId("inspectiontype", inspection.typeid);
-    var count = Query.count("inspection", "typeid={type.id}") + 1;
+    var count = Query.count("inspections", "typeid={type.id}") + 1;
     var name = type.name + " " + count;
 
     newInspection.name = name;
@@ -531,31 +539,31 @@ function rejectInspection (id) {
     if (inspection.parentid) parentid = inspection.parentid;
     else parentid = inspection.id;
     newInspection.parentid = parentid;
-    var newInspectionId = Query.insert("inspection", newInspection);
+    var newInspectionId = Query.insert("inspections", newInspection);
     // inspection.commentids = MultiValue.add(inspection.commentids, commentid);
 
     if (formid) {
         var form = Query.selectId("Forms.forms", inspection.formid);
         var newFormId = Forms.duplicateInternal(form, newInspectionId);
-        Query.updateId("inspection", newInspectionId, "formid", newFormId);
+        Query.updateId("inspections", newInspectionId, "formid", newFormId);
     } else if (type.templateid) {
-        var newEmptyFormId = newFormInternal(type.templateid, "inspection", newInspectionId);
-        Query.updateId("inspection", newInspectionId, "formid", newEmptyFormId);
+        var newEmptyFormId = newFormInternal(type.templateid, "inspections", newInspectionId);
+        Query.updateId("inspections", newInspectionId, "formid", newEmptyFormId);
     }
 
     if (fileids) {
-        var files = Query.select("System.files", "*", "linkedtable='inspection' AND linkedrecid={id}");
+        var files = Query.select("System.files", "*", "linkedtable='inspections' AND linkedrecid={id}");
         var newFileIds = [];
         files.forEach(function(file) { newFileIds.push(App.duplicatePicture(file.id, file.name)); });
         newFileIds.forEach(function (newFileId) {
             Query.updateId("System.files", newFileId, "linkedrecid", newInspectionId);
-            Query.updateId("System.files", newFileId, "linkedtable", "inspection");
+            Query.updateId("System.files", newFileId, "linkedtable", "inspections");
         });
     }
 
-    Query.updateId("inspection", id, "status", -1);
-    Query.updateId("inspection", id, "rejecteddate", Date.now());
-    Query.updateId("inspection", id, "commentids", inspection.commentids);
+    Query.updateId("inspections", id, "status", -1);
+    Query.updateId("inspections", id, "rejecteddate", Date.now());
+    Query.updateId("inspections", id, "commentids", inspection.commentids);
 
     History.remove();
     History.add("viewInspections({inspection.typeid})");
@@ -564,22 +572,22 @@ function rejectInspection (id) {
 
 function onChangeAssignee (id, value) {
 
-    var inspection = Query.selectId("inspection", id);
+    var inspection = Query.selectId("inspections", id);
 
     var owner = inspection.owner;
     owner = MultiValue.add(owner, value);
 
     List.setValue("assignee", value);
-    Query.updateId("inspection", id, "assignee", value);
-    Query.updateId("inspection", id, "owner", owner);
+    Query.updateId("inspections", id, "assignee", value);
+    Query.updateId("inspections", id, "owner", owner);
 
     History.remove(1);
     History.redirect("editInspection({id})");
 }
 
 function deleteInspection (id) {
-    var inspection = Query.selectId("inspection", id);
-    Query.deleteId("inspection", id);
+    var inspection = Query.selectId("inspections", id);
+    Query.deleteId("inspections", id);
     History.remove(2);
     History.redirect("viewInspections({inspection.typeid})");
 }
@@ -610,9 +618,9 @@ function editInspectionType (id) {
 }
 
 function deleteAllInspections () {
-    var inspections = Query.select("inspection");
+    var inspections = Query.select("inspections");
     inspections.forEach(function (inspection) {
-        var files = Query.select("System.files", "*", "linkedtable='inspection' linkedrecid={inspection.id}");
+        var files = Query.select("System.files", "*", "linkedtable='inspections' linkedrecid={inspection.id}");
         files.forEach(function(file) {
             Query.deleteId("System.files", file.id);
         });
@@ -621,7 +629,7 @@ function deleteAllInspections () {
             Query.deleteId("comments", comment.id);
         });
 
-        Query.deleteId("inspection", inspection.id);
+        Query.deleteId("inspections", inspection.id);
     });
 }
 
