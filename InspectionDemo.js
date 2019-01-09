@@ -1,5 +1,5 @@
 Config.appid = "mockup_inspection";
-Config.version = "103";
+Config.version = "107";
 Config.title = "Inspection Demo";
 Config.uses = "NovadeTrack;";
 Config.beta = "1";
@@ -30,16 +30,14 @@ function main() {
     var version = Config.version;
     App.alert("Come here " + version);
 
-
-
-    List.addItem("Inspection Types", "viewInspectionTypes()", "img:activities;icon:arrow");
+    // List.addItem("Inspection Types", "viewInspectionTypes()", "img:activities;icon:arrow");
     var data = getInspectionData();
 
     if (WEB()) {
         List.addItem("Inspections", "viewInspectionGroups()", "img:inspection;icon:arrow");
     } else {
 
-        Toolbar.addButton("Add New Inspection", "selectUnit('32', '', '')", "new");
+        Toolbar.addButton("Add New Inspection", "selectUnit('32', 'B', '02')", "new");
 
         var userName = User.getName();
         var inspections = Query.select("inspections", "*", "owner CONTAINS {userName}");
@@ -55,11 +53,7 @@ function main() {
             List.addHeader("");
             List.addItem("Done", "viewMobileInspections('done')", "img:inspection;count:" + data.done);
 
-
         } else { // this should be consultant account
-
-            inspections = inspections.filter(function(inspection) { return inspection.assignee == userName; });
-
             List.addItem("All", "viewMobileInspections('all')", "img:job;count:" + data.all);
             List.addItem("Overdue", "viewMobileInspections('overdue')", "img:clock;count:" + data.overdue);
             List.addItem("Today", "viewMobileInspections('today')", "img:edit;count:" + data.today);
@@ -210,7 +204,7 @@ function viewInspectionTypes () {
 }
 
 function viewInspectionGroups () {
-    Toolbar.addButton("Add New Inspection", "selectUnit('32', '', '')", "new");
+    Toolbar.addButton("Add New Inspection", "selectUnit('32', 'B', '02')", "new");
     List.addItemTitle("Inspections By Types")
 
     var inspections = Query.selectDistinct("inspections", "typeid");
@@ -277,15 +271,25 @@ function viewInspection (id, tab) {
 
     var inspection = Query.selectId("inspections", id);
     var startdate = inspection.startdate;
+
+    var states = Query.select("inspectionstates", "*", "typeid={inspection.typeid}");
+    var stateMap = new HashMap();
+    states.forEach(function(state) {
+        stateMap.set(state.status, state.name);
+    });
+
     if (!tab) {
         Toolbar.addButton("Edit", "editInspection({id})", "edit");
 
-        var displayStatus = "TO DO";
+        var displayStatus = "Draft";
         var status = inspection.status;
-        if (status == NEW) displayStatus = "TO DO";
-        else if (status == WIP) displayStatus = "Inspection In Progress";
-        else if (status == APPROVED) displayStatus = "Inspection Approved";
+
+        if (status == 100) {
+            displayStatus = "TO DO";
+            if (inspection.startdate) displayStatus = "Inspection In Progress";
+        } else if (status == 200) displayStatus = "Inspection Approved";
         else if (status == REJECTED) displayStatus = "Rejected";
+        else displayStatus = stateMap.get(status);
 
         List.addItemTitle(inspection.name, displayStatus);
 
@@ -392,33 +396,19 @@ function newInspection (typeid, unitid, histToRemove) {
     var count = Query.count("mockup_inspection.inspections", "typeid={typeid}") + 1;
     var inspection = {
         name: type.name + " " + count,
+        unitids: unitid,
+        status: NEW,
         typeid: typeid,
         date: Date.now(),
-        status: NEW,
-        unitids: unitid,
-        lodgedby: User.getName(),
+        scheduledate: Date.now(),
         owner: User.getName()
-    }
-
-    var inspection = {
-        name: type.name + " " + count,
-        typeid: typeid
     }
     var id = Query.insert("mockup_inspection.inspections", inspection);
 
-    // var name = type.name + " " + count;
-    // Query.updateId("inspections", id, "name", name);
-    // Query.updateId("inspections", id, "typeid", typeid);
-    // Query.updateId("inspections", id, "date", Date.now());
-    // Query.updateId("inspections", id, "description", type.description);
-    // Query.updateId("inspections", id, "status", NEW);
-    // Query.updateId("inspections", id, "unitids", unitid);
-    // Query.updateId("inspections", id, "lodgedby", User.getName());
-    // Query.updateId("inspections", id, "owner", User.getName());
-
     if (type.templateids) {
-        var formid = newFormInternal(type.templateids, "inspections", inspection.id);
-        Query.updateId("inspections", id, "formid", formid);
+        App.alert("Came here 1 - ")
+        var formid = newFormInternal(type.templateids, "inspections", id);
+        Query.updateId("inspections", id, "formids", formid);
     }
 
     History.add("viewInspection({id})");
@@ -445,8 +435,8 @@ function editInspection (id) {
     });
 
     List.addComboBox("assignee", "Assignee", inspection.assignee, "onChangeAssignee({id}, this.value)", options.join("|"));
-    if (inspection.formid) {
-        var form = Query.selectId("Forms.forms", inspection.formid);
+    if (inspection.formids) {
+        var form = Query.selectId("Forms.forms", inspection.formids);
         writeEditFields(form);
     }
 
