@@ -10,8 +10,9 @@ Config.include = [
 
 Config.tables["comments"] = "id;owner;projectid;defectid;caseid;inspectionid;comment;date DATE;type INTEGER;deletedby";
 
-Config.tables["inspectiontype"] = "id;name;description;templateid";
-Config.tables["inspections"] = "id;name;unitids;typeid;description;owner;lodgedby;assignee;inspectionstatus INTEGER;status INTEGER;parentid;startdate DATE;scheduledate DATE;date DATE;confirmationdate DATE;approvaldate DATE;rejecteddate DATE;fileids;formid;commentids";
+Config.tables["inspectiontypes"] = "id;name;templateids"; // one template mandatory
+Config.tables["inspections"] = "id;name;unitids;typeid;parentid;status INTEGER;assignee;owner;date DATE;scheduledate DATE;startdate DATE;rejecteddate DATE;rejectedby;formids";
+Config.tables["inspectionstates"] = "id;name;status INTEGER;staff;action;sign INTEGER;note;typeid"; // alwasys default submit // type = 1 Confirm, type = 2 Approve
 
 var NEW = 1;
 var WIP = 2;
@@ -28,6 +29,9 @@ function main() {
 
     var version = Config.version;
     App.alert("Come here " + version);
+
+
+
     List.addItem("Inspection Types", "viewInspectionTypes()", "img:activities;icon:arrow");
     var data = getInspectionData();
 
@@ -75,31 +79,29 @@ function leftpane () {
 
 function getInspectionData () {
     var userName = User.getName();
-    // var inspections = Query.select("inspections", "*", "owner CONTAINS {userName}", "date");
-    var inspections = Query.select("inspections");
 
-    // App.alert("Come here 2 : " + inspections.length);
+    var stateMap = new HashMap();
 
-    // var filteredInspections = [];
-    // var inspectionMap = new HashMap();
+    var inspectionstates = Query.select("inspectionstates");
+    inspectionstates.forEach(function(inspState) {
+        var list = stateMap.get(inspState.typeid, []);
+        if (!list) list = [inspState];
+        else list.push(inspState);
+        stateMap.set(inspState.typeid, list);
+    });
 
-    // filteredInspections = inspections;
-
-    // inspections.forEach(function(inspection) {
-    //     if (inspection.parentid) inspectionMap.set(inspection.parentid, inspection);
-    //     else inspectionMap.set(inspection.id, inspection);
-    // });
-
-
-    // inspectionMap.keys.forEach(function(key) {
-    //     filteredInspections.push(inspectionMap.get(key));
-    // });
+    // Filter out reject inspection versions
+    var inspections = Query.select("inspections", "*", "owner CONTAINS {userName}", "date");
+    inspections = inspections.filter(function(insp) {
+        if (insp.parentid) return insp.status != -1;
+        else return true;
+    });
 
     if (userName == "yuyumonwin") {}
     else {
-        // inspections = inspections.filter(function(inspection) {
-        //     return inspection.assignee == userName;
-        // });
+        inspections = inspections.filter(function(inspection) {
+            return inspection.assignee == userName;
+        });
     }
 
     var data = {};
@@ -122,13 +124,12 @@ function getInspectionData () {
     data.schedule = 0;
     data.scheduleData = [];
 
-
     var today = Date.today();
     var tomorrow = Date.addDays(today, 1);
     var nextDay = Date.addDays(tomorrow, 1);
     inspections.forEach(function (inspection) {
-        if (inspection.status == WIP) {
-            if (inspection.inspectionstatus) {
+        if (inspection.status == 100) {
+            if (inspection.startdate) {
                 data.wip++;
                 data.wipData.push(inspection);
             }
@@ -155,7 +156,7 @@ function getInspectionData () {
             if (inspection.status == NEW) {
                 data.new++;
                 data.newData.push(inspection);
-            } else if (inspection.status == APPROVED) {
+            } else if (inspection.status == 200) {
                 data.done++;
                 data.doneData.push(inspection);
             } else if (inspection.status == REJECTED) {
@@ -201,7 +202,7 @@ function viewMobileInspections (status) {
 function viewInspectionTypes () {
     Toolbar.addButton("Add New Inspection Type", "newInspectionType()", "new");
     List.addItemTitle("Inspection Types");
-    var types = Query.select("inspectiontype");
+    var types = Query.select("inspectiontypes");
     types.forEach(function(type) {
         List.addItem(type.name, "editInspectionType({type.id})", "img:activities");
     });
@@ -214,7 +215,7 @@ function viewInspectionGroups () {
 
     var inspections = Query.selectDistinct("inspections", "typeid");
     inspections.forEach(function (inspection) {
-        var type = Query.selectId("inspectiontype", inspection.typeid);
+        var type = Query.selectId("inspectiontypes", inspection.typeid);
         var count = Query.count("inspections", "typeid={inspection.typeid}");
         List.addItemSubtitle(type.name, "Total Inspections - " + count, "viewInspections({type.id})", "img:activities");
     });
@@ -224,7 +225,7 @@ function viewInspectionGroups () {
 function viewInspections (typeid) {
     if (typeid) {
 
-        var type = Query.selectId("inspectiontype", typeid);
+        var type = Query.selectId("inspectiontypes", typeid);
         List.addItemTitle("Inspections", "Type - " + type.name);
 
         var inspections = Query.select("inspections", "*", "typeid={typeid}");
@@ -257,7 +258,7 @@ function selectUnit (projectid, block, level, histToRemove) { // Remove history
 
 function showPopupInspectionType (unitid, histToRemove) {
     histToRemove = histToRemove? histToRemove + 1: 1;
-    var types = Query.select("inspectiontype");
+    var types = Query.select("inspectiontypes");
     types.forEach(function (type) {
         List.addItem(type.name, "newInspection({type.id}, {unitid}, {histToRemove})");
     });
@@ -275,7 +276,7 @@ function viewInspection (id, tab) {
     Toolbar.addTab("History", "viewInspection({id}, 'history')");
 
     var inspection = Query.selectId("inspections", id);
-    var inspectionstatus = inspection.inspectionstatus;
+    var startdate = inspection.startdate;
     if (!tab) {
         Toolbar.addButton("Edit", "editInspection({id})", "edit");
 
@@ -288,8 +289,9 @@ function viewInspection (id, tab) {
 
         List.addItemTitle(inspection.name, displayStatus);
 
-        if (userName != "yuyumonwin" && !inspectionstatus) {
-            List.addButton("Start", "Query.updateId('inspections', {id}, 'inspectionstatus', 1); History.reload();");
+        if (userName != "yuyumonwin" && !startdate) {
+            var now = Date.now();
+            List.addButton("Start", "Query.updateId('inspections', {id}, 'startdate', {now}); History.reload();");
         } else {
             if (status == NEW) List.addButton("Submit", "confirmInspection({id})");
             else if (status == WIP) {
@@ -299,7 +301,7 @@ function viewInspection (id, tab) {
             }
         }
 
-        var type = Query.selectId("inspectiontype", inspection.typeid);
+        var type = Query.selectId("inspectiontypes", inspection.typeid);
         List.addItemSubtitle("Type", type.name, "", "img:activities");
         List.addItemSubtitle("Description", inspection.description, "", "img:note");
         var unit = Query.selectId("novadetrack.units", inspection.unitids);
@@ -385,19 +387,18 @@ function takePix(id) {
 
 function newInspection (typeid, unitid, histToRemove) {
     History.remove(parseInt(histToRemove));
-    var type = Query.selectId("inspectiontype", typeid);
+    var type = Query.selectId("inspectiontypes", typeid);
 
     var count = Query.count("mockup_inspection.inspections", "typeid={typeid}") + 1;
-    // var inspection = {
-    //     name: type.name + " " + count,
-    //     typeid: typeid,
-    //     date: Date.now(),
-    //     description: type.description,
-    //     status: NEW,
-    //     unitids: unitid,
-    //     lodgedby: User.getName(),
-    //     owner: User.getName()
-    // }
+    var inspection = {
+        name: type.name + " " + count,
+        typeid: typeid,
+        date: Date.now(),
+        status: NEW,
+        unitids: unitid,
+        lodgedby: User.getName(),
+        owner: User.getName()
+    }
 
     var inspection = {
         name: type.name + " " + count,
@@ -415,10 +416,10 @@ function newInspection (typeid, unitid, histToRemove) {
     // Query.updateId("inspections", id, "lodgedby", User.getName());
     // Query.updateId("inspections", id, "owner", User.getName());
 
-    // if (type.templateid) {
-    //     var formid = newFormInternal(type.templateid, "inspections", inspection.id);
-    //     Query.updateId("inspections", id, "formid", formid);
-    // }
+    if (type.templateids) {
+        var formid = newFormInternal(type.templateids, "inspections", inspection.id);
+        Query.updateId("inspections", id, "formid", formid);
+    }
 
     History.add("viewInspection({id})");
     History.redirect("editInspection({id})");
@@ -525,7 +526,7 @@ function rejectInspection (id) {
     newInspection.assignee = inspection.assignee;
     newInspection.scheduledate = inspection.scheduledate;
 
-    var type = Query.selectId("inspectiontype", inspection.typeid);
+    var type = Query.selectId("inspectiontypes", inspection.typeid);
     var count = Query.count("inspections", "typeid={type.id}") + 1;
     var name = type.name + " " + count;
 
@@ -540,7 +541,6 @@ function rejectInspection (id) {
     else parentid = inspection.id;
     newInspection.parentid = parentid;
     var newInspectionId = Query.insert("inspections", newInspection);
-    // inspection.commentids = MultiValue.add(inspection.commentids, commentid);
 
     if (formid) {
         var form = Query.selectId("Forms.forms", inspection.formid);
@@ -563,7 +563,6 @@ function rejectInspection (id) {
 
     Query.updateId("inspections", id, "status", -1);
     Query.updateId("inspections", id, "rejecteddate", Date.now());
-    Query.updateId("inspections", id, "commentids", inspection.commentids);
 
     History.remove();
     History.add("viewInspections({inspection.typeid})");
@@ -593,15 +592,15 @@ function deleteInspection (id) {
 }
 
 function newInspectionType () {
-    var id = Query.insert("inspectiontype", {});
+    var id = Query.insert("inspectiontypes", {});
     History.redirect("editInspectionType({id})");
 }
 
 function editInspectionType (id) {
     List.addItemTitle("Edit Inspection Type");
 
-    var inspectiontype = Query.selectId("inspectiontype", id);
-    var onchange = "Query.updateId('inspectiontype',{id}, this.id, this.value);History.reload()";
+    var inspectiontype = Query.selectId("inspectiontypes", id);
+    var onchange = "Query.updateId('inspectiontypes',{id}, this.id, this.value);History.reload()";
 
     List.addTextBox("name", "Name", inspectiontype.name, onchange);
     List.addTextBox("description", "Description", inspectiontype.description, onchange);
@@ -611,7 +610,7 @@ function editInspectionType (id) {
         return template.id + ":" + template.name;
     });
     options.push(":None");
-    List.addComboBox("templateid", "Template", inspectiontype.templateid, onchange, options.join("|"));
+    List.addComboBox("templateid", "Template", inspectiontype.templateids, onchange, options.join("|"));
 
     List.addButton("Save", "History.back()");
     List.show();
