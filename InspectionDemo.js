@@ -1,5 +1,5 @@
 Config.appid = "mockup_inspection";
-Config.version = "107";
+Config.version = "111";
 Config.title = "Inspection Demo";
 Config.uses = "NovadeTrack;";
 Config.beta = "1";
@@ -11,7 +11,7 @@ Config.include = [
 Config.tables["comments"] = "id;owner;projectid;defectid;caseid;inspectionid;comment;date DATE;type INTEGER;deletedby";
 
 Config.tables["inspectiontypes"] = "id;name;templateids"; // one template mandatory
-Config.tables["inspections"] = "id;name;unitids;typeid;parentid;status INTEGER;assignee;owner;date DATE;scheduledate DATE;startdate DATE;rejecteddate DATE;rejectedby;formids";
+Config.tables["inspections"] = "id;name;unitids;typeid;parentid;status INTEGER;assignee;owner;date DATE;scheduledate DATE;startdate DATE;confirmationdate DATE;confirmedby;approvedate DATE; approvedby;rejecteddate DATE;rejectedby;formids";
 Config.tables["inspectionstates"] = "id;name;status INTEGER;staff;action;sign INTEGER;note;typeid"; // alwasys default submit // type = 1 Confirm, type = 2 Approve
 
 var NEW = 1;
@@ -35,6 +35,7 @@ function main() {
 
     if (WEB()) {
         List.addItem("Inspections", "viewInspectionGroups()", "img:inspection;icon:arrow");
+        List.addItem("Inspection Types", "viewInspectionTypes()", "img:job;icon:arrow");
     } else {
 
         Toolbar.addButton("Add New Inspection", "selectUnit('32', 'B', '02')", "new");
@@ -187,7 +188,7 @@ function viewMobileInspections (status) {
         inspections = data.rejectedData;
     }
 
-   inspections.forEach(function (inspection) {
+    inspections.forEach(function (inspection) {
         List.addItem(inspection.name, "viewInspection({inspection.id})", "img:inspection");
     });
     List.show();
@@ -222,7 +223,7 @@ function viewInspections (typeid) {
         var type = Query.selectId("inspectiontypes", typeid);
         List.addItemTitle("Inspections", "Type - " + type.name);
 
-        var inspections = Query.select("inspections", "*", "typeid={typeid}");
+        var inspections = Query.select("inspections", "*", "typeid={typeid} AND owner CONTAINS {User.getName()}");
         inspections.forEach(function (inspection) {
             List.addItem(inspection.name, "viewInspection({inspection.id})", "img:inspection");
         });
@@ -293,6 +294,12 @@ function viewInspection (id, tab) {
 
         List.addItemTitle(inspection.name, displayStatus);
 
+        if (status == NEW) List.addButton("Submit", "confirmInspection({id})");
+
+
+
+
+
         if (userName != "yuyumonwin" && !startdate) {
             var now = Date.now();
             List.addButton("Start", "Query.updateId('inspections', {id}, 'startdate', {now}); History.reload();");
@@ -319,9 +326,9 @@ function viewInspection (id, tab) {
         List.addItemSubtitle("Scheduled Date", Format.date(inspection.scheduledate), "", "img:calendar");
         List.addItemSubtitle("Assign To", inspection.assignee, "", "img:group");
 
-        if (inspection.formid) {
+        if (inspection.formids) {
             List.addHeader("");
-            var form = Query.selectId("Forms.forms", inspection.formid);
+            var form = Query.selectId("Forms.forms", inspection.formids);
             Forms.writeViewFields(form);
         }
 
@@ -406,7 +413,6 @@ function newInspection (typeid, unitid, histToRemove) {
     var id = Query.insert("mockup_inspection.inspections", inspection);
 
     if (type.templateids) {
-        App.alert("Came here 1 - ")
         var formid = newFormInternal(type.templateids, "inspections", id);
         Query.updateId("inspections", id, "formids", formid);
     }
