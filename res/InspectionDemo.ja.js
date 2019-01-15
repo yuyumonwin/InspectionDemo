@@ -1,6 +1,4 @@
 ﻿// AUTO GENERATED FILE : DO NOT MODIFY
 R.DESCRIPTION="説明";
-R.YES="はい";
-R.NO="違います";
 R.TEAM="チーム";
 R.EDIT="編集";

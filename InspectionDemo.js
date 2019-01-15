@@ -1,5 +1,5 @@
 Config.appid = "mockup_inspection";
-Config.version = "111";
+Config.version = "135";
 Config.title = "Inspection Demo";
 Config.uses = "NovadeTrack;";
 Config.beta = "1";
@@ -72,18 +72,16 @@ function leftpane () {
     List.show();
 }
 
+function showStates (typeid) {
+    var states = Query.select("inspectionstates", "*", "typeid={typeid}", "status");
+    states.forEach(function (state) {
+        List.addItem(state.name, "", "img:inspection");
+    });
+    List.show();
+}
+
 function getInspectionData () {
     var userName = User.getName();
-
-    var stateMap = new HashMap();
-
-    var inspectionstates = Query.select("inspectionstates");
-    inspectionstates.forEach(function(inspState) {
-        var list = stateMap.get(inspState.typeid, []);
-        if (!list) list = [inspState];
-        else list.push(inspState);
-        stateMap.set(inspState.typeid, list);
-    });
 
     // Filter out reject inspection versions
     var inspections = Query.select("inspections", "*", "owner CONTAINS {userName}", "date");
@@ -261,7 +259,6 @@ function showPopupInspectionType (unitid, histToRemove) {
 }
 
 function viewInspection (id, tab) {
-
     var userName = User.getName();
 
     LocalSettings.set(CHK_FILEIDS, 0);
@@ -273,10 +270,12 @@ function viewInspection (id, tab) {
     var inspection = Query.selectId("inspections", id);
     var startdate = inspection.startdate;
 
-    var states = Query.select("inspectionstates", "*", "typeid={inspection.typeid}");
+    var states = Query.select("inspectionstates", "*", "typeid={inspection.typeid}", "status");
     var stateMap = new HashMap();
+    var actionMap = new HashMap();
     states.forEach(function(state) {
         stateMap.set(state.status, state.name);
+        actionMap.set(state.status, state.action);
     });
 
     if (!tab) {
@@ -285,36 +284,39 @@ function viewInspection (id, tab) {
         var displayStatus = "Draft";
         var status = inspection.status;
 
-        if (status == 100) {
-            displayStatus = "TO DO";
-            if (inspection.startdate) displayStatus = "Inspection In Progress";
-        } else if (status == 200) displayStatus = "Inspection Approved";
-        else if (status == REJECTED) displayStatus = "Rejected";
-        else displayStatus = stateMap.get(status);
+        if (status == 100 && !startdate && userName != "yuyumonwin") {
+            displayStatus = "Ready To Inspect";
+        } else {
+            displayStatus = stateMap.get(status);
+            var actionName = actionMap.get(status);
+        }
 
         List.addItemTitle(inspection.name, displayStatus);
-
-        if (status == NEW) List.addButton("Submit", "confirmInspection({id})");
-
-
-
-
-
-        if (userName != "yuyumonwin" && !startdate) {
+        if (status == 100 && !startdate && userName != "yuyumonwin") {
             var now = Date.now();
             List.addButton("Start", "Query.updateId('inspections', {id}, 'startdate', {now}); History.reload();");
-        } else {
-            if (status == NEW) List.addButton("Submit", "confirmInspection({id})");
-            else if (status == WIP) {
-                List.addButton("Approve", "approveInspection({id})");
-                // List.addButton("Reject", "rejectInspection({id})", "color:#FF0000");
-                List.addButton("Reject", "gotoCollectDataToDuplicateForReject({id})", "color:#F1524C");
-            }
-        }
+        } else List.addButton(actionName, "inspectionNextState({id})");
+
+        List.addButton("Reject", "gotoCollectDataToDuplicateForReject({id})", "color:#F1524C");
+
+
+
+        // if (userName != "yuyumonwin" && !startdate) {
+        //     var now = Date.now();
+        //     List.addButton("Start", "Query.updateId('inspections', {id}, 'startdate', {now}); History.reload();");
+        // } else {
+        //     if (status == NEW) List.addButton("Submit", "confirmInspection({id})");
+        //     else if (status == WIP) {
+        //         List.addButton("Approve", "approveInspection({id})");
+        //         // List.addButton("Reject", "rejectInspection({id})", "color:#FF0000");
+        //         List.addButton("Reject", "gotoCollectDataToDuplicateForReject({id})", "color:#F1524C");
+        //     }
+        // }
+
+
 
         var type = Query.selectId("inspectiontypes", inspection.typeid);
         List.addItemSubtitle("Type", type.name, "", "img:activities");
-        List.addItemSubtitle("Description", inspection.description, "", "img:note");
         var unit = Query.selectId("novadetrack.units", inspection.unitids);
         var completeLocation = [];
         if (unit) {
@@ -327,17 +329,14 @@ function viewInspection (id, tab) {
         List.addItemSubtitle("Assign To", inspection.assignee, "", "img:group");
 
         if (inspection.formids) {
-            List.addHeader("");
+            List.addHeader(" ");
             var form = Query.selectId("Forms.forms", inspection.formids);
+            // App.alert("Form " + inspection.formids)
             Forms.writeViewFields(form);
         }
 
-        writeInspectionPhotos(id);
-        if (inspection.status != -1) List.addButton("Add Photo", "takePix({id})", "color:#8D8D8D");
-        writeComments(id);
-        if (inspection.status != -1) List.addButton("Add Comment", "addComment({id})", "color:#8D8D8D")
-
-        // List.addButton(R.ADDCOMMENT, "newComment('nonconformities', {id})", "color:gray;");
+        // writeComments(id);
+        // if (inspection.status != -1) List.addButton("Add Comment", "addComment({id})", "color:#8D8D8D")
 
     } else {
         if (inspection.parentid) {
@@ -351,6 +350,24 @@ function viewInspection (id, tab) {
         else if (inspection.rejecteddate) List.addItemLabel("Rejected Date", Format.datetime(inspection.rejecteddate));
     }
     List.show();
+}
+
+function inspectionNextState (inspectionid) {
+    var inspection = Query.selectId("inspections", inspectionid);
+
+    var typeid = inspection.typeid;
+    var states = Query.select("inspectionstates", "*", "typeid={typeid} AND status>{inspection.status}", "status");
+
+    if (states.length) {
+        var nextState = states[0];
+
+        Query.updateId("inspections", inspectionid, "status", nextState.status);
+    }
+    History.reload();
+
+
+
+
 }
 
 function writeComments (id) {
@@ -449,26 +466,6 @@ function editInspection (id) {
     var cb = "viewInspection({id})";
     List.addButton("Save", "History.back()");
     List.show();
-}
-
-function confirmInspection (id) {
-    var inspection = Query.selectId("inspections", id);
-    if (App.confirm("Are you sure you want to confirm this inspection?") === false) return false;
-
-    Query.updateId("inspections", id, "status", WIP);
-    Query.updateId("inspections", id, "confirmationdate", Date.now());
-    History.remove();
-    History.redirect("viewInspection({id})");
-}
-
-function approveInspection (id) {
-    var inspection = Query.selectId("inspections", id);
-    if (App.confirm("Are you sure you want to approve this inspection?") === false) return false;
-
-    Query.updateId("inspections", id, "status", APPROVED);
-    Query.updateId("inspections", id, "approvaldate", Date.now());
-    History.remove();
-    History.redirect("viewInspection({id})");
 }
 
 function gotoCollectDataToDuplicateForReject (id) {
@@ -607,6 +604,9 @@ function editInspectionType (id) {
     });
     options.push(":None");
     List.addComboBox("templateid", "Template", inspectiontype.templateids, onchange, options.join("|"));
+
+    List.addHeader(" ");
+    List.addItem("Show States", "showStates({id})");
 
     List.addButton("Save", "History.back()");
     List.show();
@@ -1024,7 +1024,7 @@ Forms.getNewName = function (templateid, counterid) {
     return template.prefix + (template.prefix != "" ? "-" : "") + counter;
 }
 
-//////////////////////////////////
+////////////////////////////////
 
 Forms.selectFormPhotos = function (form) {
     var files = [];
@@ -1325,4 +1325,43 @@ CustomFields.addViewItem = function (id, type, label, value, options, formid) {
     } else {
         List.addItemLabel(label, value);
     }
+}
+
+
+CustomFields.addFileBox = function (label, table, id, action) {
+    var files = [];
+    if (table && id) files = Query.select("System.files", "id;name;mime;externalurl", "linkedtable={table} AND linkedrecid={id}", "date");
+    if (action == null && files.length == 0) return;
+
+    if (label != null) List.addHeader(label);
+
+    if (WEB()) {
+        _html.push('<div style="margin-left:60px;">');
+        NextPrevious.addSection();
+        for (var i = 0; i < files.length; i++) {
+            var file = files[i];
+            var fileid = (file.mime.indexOf("image/") != -1 && file.externalurl == "") ? file.id : null;
+            List.addThumbnail(file.name, fileid, CustomFields._VIEWFILE + "({file.id})");
+        }
+        if (action != null) FileBox.writeButton("", R.SELECTFILE, "FilePicker.pick({table},{id})", "");
+        _html.push('</div>');
+    } else {
+        if (action != null) {
+            var label = (action == "scan") ? R.SCANDOCUMENT : R.ADDPHOTO;
+            List.addItem(label, "App.takePicture({table},{id},{action})", "img:camera;icon:new");
+        }
+
+        for (var i = 0; i < files.length; i++) {
+            var file = files[i];
+            var style = null;
+            if (file.mime == 'image/jpeg' || file.mime == 'image/png' || file.mime == 'image/gif') style = "scale:crop;img:" + Settings.getFileUrl(file.id);
+            List.addItem(file.name, CustomFields._VIEWFILE + "({file.id})", style);
+        }
+    }
+}
+
+CustomFields.addScoreBox = function (label, value) {
+    var onchange = "";
+    var options = "";
+    List.addToggleBox('', label, value, onchange, options);
 }

@@ -1,6 +1,4 @@
 ﻿// AUTO GENERATED FILE : DO NOT MODIFY
 R.DESCRIPTION="Deskripsi";
-R.YES="Ya";
-R.NO="Tidak";
 R.TEAM="Tim";
 R.EDIT="Ubah";
